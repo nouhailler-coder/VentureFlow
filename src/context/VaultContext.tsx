@@ -49,6 +49,7 @@ import {
   registerLocalPasskey,
   authenticateWithLocalPasskey,
   checkPasskeyCapabilities,
+  deriveKeyFromPrfBytes,
   PasskeySupport,
 } from '../crypto/passkeyService';
 
@@ -364,16 +365,22 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const wrapped = await wrapMasterKey(masterKey, wrappingKey);
 
     let passkeyCredId: string | undefined = undefined;
-    let encryptedMasterKeyPasskey: string | undefined = undefined;
+    let passkeyPrfEnabled: boolean | undefined = undefined;
+    let passkeyPrfSaltBase64: string | undefined = undefined;
+    let encryptedMasterKeyPasskey: { wrappedKeyBase64: string; ivBase64: string } | undefined = undefined;
 
     if (enrollPasskey && passkeySupport.isSupported) {
       try {
-        const pk = await registerLocalPasskey();
+        const prfSalt = generateRandomBytes(32);
+        const pk = await registerLocalPasskey(prfSalt);
         passkeyCredId = pk.credentialId;
-        // In local WebAuthn architecture without central server:
-        // We use a secondary envelope keyed with a device-derived entropy salt
-        // or stored encrypted under user verification.
-        encryptedMasterKeyPasskey = wrapped.wrappedKeyBase64;
+        passkeyPrfEnabled = pk.prfEnabled;
+
+        if (pk.prfEnabled && pk.prfKeyMaterial) {
+          const prfWrappingKey = await deriveKeyFromPrfBytes(pk.prfKeyMaterial);
+          encryptedMasterKeyPasskey = await wrapMasterKey(masterKey, prfWrappingKey);
+          passkeyPrfSaltBase64 = arrayBufferToBase64(prfSalt);
+        }
       } catch (pkErr) {
         console.warn('Passkey enrollment failed, proceeding with passphrase only:', pkErr);
       }
@@ -386,6 +393,8 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       iterations: PBKDF2_DEFAULT_ITERATIONS,
       encryptedMasterKeyBase64: wrapped.wrappedKeyBase64,
       passkeyCredentialId: passkeyCredId,
+      passkeyPrfEnabled,
+      passkeyPrfSaltBase64,
       encryptedMasterKeyPasskey,
       createdAt: new Date().toISOString(),
       lastUnlockedAt: new Date().toISOString(),
@@ -431,25 +440,64 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Unlock with Passkey
+  // Unlock with Passkey (Separates user authentication from cryptographic decryption)
   const unlockWithPasskey = async (): Promise<boolean> => {
     const meta = metadata || (await getVaultMetadata());
     if (!meta || !meta.passkeyCredentialId) {
       throw new Error('Aucune passkey enregistrée pour ce coffre.');
     }
 
-    try {
-      const assertion = await authenticateWithLocalPasskey(meta.passkeyCredentialId);
-      if (!assertion) return false;
+    // Branch 1: Passkey was enrolled with hardware PRF extension
+    if (meta.passkeyPrfEnabled && meta.passkeyPrfSaltBase64 && meta.encryptedMasterKeyPasskey) {
+      try {
+        const prfSalt = base64ToUint8Array(meta.passkeyPrfSaltBase64);
+        const authResult = await authenticateWithLocalPasskey(meta.passkeyCredentialId, prfSalt);
 
-      // When local biometrics succeed, we can unwrap or prompt for session passphrase
-      // If passkey is used as second factor or direct hardware unlock:
-      // Note per spec Section 3.2: "Une passkey ne doit pas être considérée automatiquement comme une clé de chiffrement... 
-      // L'implémentation doit prévoir la protection de la clé de chiffrement..."
-      // If we don't have PRF extension supported on this device, passkey verifies the user locally.
-      return true;
-    } catch (err) {
-      console.error('Erreur authentification Passkey:', err);
+        if (!authResult.authenticated) {
+          return false;
+        }
+
+        if (!authResult.prfKeyMaterial) {
+          throw new Error(
+            "L'authentification biométrique a réussi, mais votre matériel n'a pas renvoyé la clé cryptographique PRF. Déverrouillez avec votre phrase secrète."
+          );
+        }
+
+        // Derive wrapping key from PRF bytes
+        const prfWrappingKey = await deriveKeyFromPrfBytes(authResult.prfKeyMaterial);
+
+        let wrappedKeyBase64: string;
+        let ivBase64: string;
+        if (typeof meta.encryptedMasterKeyPasskey === 'string') {
+          wrappedKeyBase64 = meta.encryptedMasterKeyPasskey;
+          ivBase64 = meta.ivBase64;
+        } else {
+          wrappedKeyBase64 = meta.encryptedMasterKeyPasskey.wrappedKeyBase64;
+          ivBase64 = meta.encryptedMasterKeyPasskey.ivBase64;
+        }
+
+        const masterKey = await unwrapMasterKey(wrappedKeyBase64, ivBase64, prfWrappingKey);
+        masterKeyRef.current = masterKey;
+        await loadAndDecryptAllData(masterKey);
+
+        const updatedMeta = { ...meta, lastUnlockedAt: new Date().toISOString() };
+        await saveVaultMetadata(updatedMeta);
+        setMetadata(updatedMeta);
+
+        setStatus('unlocked');
+        return true;
+      } catch (err: any) {
+        console.error('Erreur déverrouillage passkey PRF:', err);
+        throw err;
+      }
+    } else {
+      // Branch 2: Passkey without PRF extension
+      const authResult = await authenticateWithLocalPasskey(meta.passkeyCredentialId);
+      if (authResult.authenticated) {
+        throw new Error(
+          "Authentification biométrique réussie. Toutefois, sans extension PRF matérielle sur cet appareil, la clé maîtresse doit être déchiffrée avec votre phrase secrète."
+        );
+      }
       return false;
     }
   };
@@ -503,13 +551,26 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Verify passphrase first
     const salt = base64ToUint8Array(meta.saltBase64);
     const wrappingKey = await deriveKeyFromPassphrase(currentPassphrase, salt, meta.iterations);
-    await unwrapMasterKey(meta.encryptedMasterKeyBase64, meta.ivBase64, wrappingKey);
+    const masterKey = await unwrapMasterKey(meta.encryptedMasterKeyBase64, meta.ivBase64, wrappingKey);
 
-    const pk = await registerLocalPasskey();
+    const prfSalt = generateRandomBytes(32);
+    const pk = await registerLocalPasskey(prfSalt);
+
+    let encryptedMasterKeyPasskey: { wrappedKeyBase64: string; ivBase64: string } | undefined = undefined;
+    let passkeyPrfSaltBase64: string | undefined = undefined;
+
+    if (pk.prfEnabled && pk.prfKeyMaterial) {
+      const prfWrappingKey = await deriveKeyFromPrfBytes(pk.prfKeyMaterial);
+      encryptedMasterKeyPasskey = await wrapMasterKey(masterKey, prfWrappingKey);
+      passkeyPrfSaltBase64 = arrayBufferToBase64(prfSalt);
+    }
+
     const updatedMeta: VaultMetadata = {
       ...meta,
       passkeyCredentialId: pk.credentialId,
-      encryptedMasterKeyPasskey: meta.encryptedMasterKeyBase64,
+      passkeyPrfEnabled: pk.prfEnabled,
+      passkeyPrfSaltBase64,
+      encryptedMasterKeyPasskey,
     };
 
     await saveVaultMetadata(updatedMeta);
@@ -524,6 +585,8 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updatedMeta: VaultMetadata = {
       ...meta,
       passkeyCredentialId: undefined,
+      passkeyPrfEnabled: undefined,
+      passkeyPrfSaltBase64: undefined,
       encryptedMasterKeyPasskey: undefined,
     };
     await saveVaultMetadata(updatedMeta);
@@ -555,35 +618,107 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return JSON.stringify(backupPayload, null, 2);
   };
 
-  // Import full encrypted backup
+  // Import full encrypted backup safely without silent data loss
   const importEncryptedBackup = async (
     jsonContent: string,
     passphrase?: string
   ): Promise<boolean> => {
+    // 1. Strict format and schema validation
+    let parsed: any;
     try {
-      const parsed = JSON.parse(jsonContent);
-      if (!parsed.vaultMetadata || !parsed.records) {
-        throw new Error('Fichier de sauvegarde invalide ou corrompu.');
+      parsed = JSON.parse(jsonContent);
+    } catch {
+      throw new Error("Le fichier sélectionné n'est pas un JSON valide.");
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Structure de sauvegarde invalide.');
+    }
+
+    const { vaultMetadata, records } = parsed;
+    if (
+      !vaultMetadata ||
+      typeof vaultMetadata !== 'object' ||
+      !vaultMetadata.saltBase64 ||
+      !vaultMetadata.ivBase64 ||
+      !vaultMetadata.encryptedMasterKeyBase64 ||
+      !Array.isArray(records)
+    ) {
+      throw new Error('Structure de sauvegarde corrompue : métadonnées ou enregistrements manquants.');
+    }
+
+    // Validate each record envelope structure
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (
+        !rec ||
+        typeof rec !== 'object' ||
+        !rec.id ||
+        !rec.recordType ||
+        typeof rec.ciphertextBase64 !== 'string' ||
+        typeof rec.ivBase64 !== 'string'
+      ) {
+        throw new Error(`Enregistrement #${i} invalide dans la sauvegarde.`);
       }
+    }
 
+    // 2. Pre-validate passphrase if provided BEFORE modifying database
+    let preVerifiedMasterKey: CryptoKey | null = null;
+    if (passphrase) {
+      try {
+        const salt = base64ToUint8Array(vaultMetadata.saltBase64);
+        const testWrappingKey = await deriveKeyFromPassphrase(
+          passphrase,
+          salt,
+          vaultMetadata.iterations || PBKDF2_DEFAULT_ITERATIONS
+        );
+        preVerifiedMasterKey = await unwrapMasterKey(
+          vaultMetadata.encryptedMasterKeyBase64,
+          vaultMetadata.ivBase64,
+          testWrappingKey
+        );
+      } catch {
+        throw new Error('Phrase secrète incorrecte pour cette sauvegarde chiffrée. Les données existantes restent inchangées.');
+      }
+    }
+
+    // 3. Snapshot existing data in memory for rollback
+    const previousMeta = metadata || (await getVaultMetadata());
+    const previousRecords = await getEncryptedRecords();
+
+    try {
       await clearEntireVault();
-      await saveVaultMetadata(parsed.vaultMetadata);
+      await saveVaultMetadata(vaultMetadata);
 
-      for (const rec of parsed.records) {
+      for (const rec of records) {
         await putEncryptedRecord(rec.id, rec.recordType, rec.ciphertextBase64, rec.ivBase64);
       }
 
-      setMetadata(parsed.vaultMetadata);
+      setMetadata(vaultMetadata);
 
-      if (passphrase) {
-        return await unlockWithPassphrase(passphrase);
+      if (preVerifiedMasterKey) {
+        masterKeyRef.current = preVerifiedMasterKey;
+        await loadAndDecryptAllData(preVerifiedMasterKey);
+        setStatus('unlocked');
+        return true;
       } else {
         setStatus('locked');
         return true;
       }
-    } catch (err: any) {
-      console.error('Erreur restauration sauvegarde:', err);
-      throw new Error(err?.message || 'Erreur lors de la restauration');
+    } catch (restoreErr: any) {
+      // Rollback to previous state on failure
+      try {
+        await clearEntireVault();
+        if (previousMeta) {
+          await saveVaultMetadata(previousMeta);
+        }
+        for (const pr of previousRecords) {
+          await putEncryptedRecord(pr.id, pr.recordType, pr.ciphertextBase64, pr.ivBase64);
+        }
+      } catch (rollbackErr) {
+        console.error('Échec critique du rollback de sauvegarde:', rollbackErr);
+      }
+      throw new Error(`Échec de la restauration : ${restoreErr?.message || 'Erreur interne'}. Restauration annulée.`);
     }
   };
 

@@ -12,6 +12,7 @@ import {
   decryptData,
   generateRandomBytes,
   arrayBufferToBase64,
+  base64ToUint8Array,
   computeHmac,
   SALT_LENGTH_BYTES,
   PBKDF2_DEFAULT_ITERATIONS,
@@ -149,33 +150,39 @@ export async function decryptExportPackage(
   );
 }
 
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = window.atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+/** Escape HTML special characters for safe injection into markup */
+export function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
  * Generate Standalone Offline HTML Report (Mode A)
  * Produces an autonomous HTML document with zero external server dependencies,
  * containing the encrypted bundle and an inline Web Crypto decryption viewer.
+ * Strictly protected against XSS injections via safe DOM APIs and strict CSP.
  */
 export function generateAutonomousHtmlReport(
   encryptedPackage: EncryptedExportFile,
   startupName: string
 ): string {
-  const packageJson = JSON.stringify(encryptedPackage).replace(/<\/script>/g, '<\\/script>');
+  const safeTitle = escapeHtml(startupName);
+  const packageJson = JSON.stringify(encryptedPackage)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
 
   return `<!DOCTYPE html>
 <html lang="fr" class="bg-slate-950 text-slate-100">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VentureFlow — Rapport Confidentiel : ${startupName}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none';">
+  <title>VentureFlow — Rapport Confidentiel : ${safeTitle}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #090D16; color: #F1F5F9; line-height: 1.5; padding: 24px; }
@@ -234,7 +241,7 @@ export function generateAutonomousHtmlReport(
             <div id="dealValuation" style="font-size:12px; color:#64748B;"></div>
           </div>
         </div>
-        <p id="dealDescription" style="font-size:14px; color:#CBD5E1; margin-top:12px; line-height:1.6;"></p>
+        <p id="dealDescription" style="font-size:14px; color:#CBD5E1; margin-top:12px; line-height:1.6; white-space:pre-wrap;"></p>
       </div>
 
       <!-- Financials if present -->
@@ -319,60 +326,98 @@ export function generateAutonomousHtmlReport(
     });
 
     function formatCur(val, cur) {
-      if (!val) return '—';
+      if (!val && val !== 0) return '—';
       return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: cur || 'EUR', maximumFractionDigits: 0 }).format(val);
+    }
+
+    function createCell(text) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      return td;
     }
 
     function renderReport(data) {
       const s = data.startup || {};
-      document.getElementById('dealName').innerText = s.name || 'Startup';
-      document.getElementById('dealSectorStage').innerText = (s.sector || '') + ' · ' + (s.stage || '') + ' · ' + (s.city || '') + ' (' + (s.country || '') + ')';
-      document.getElementById('dealTarget').innerText = formatCur(s.targetAmount, s.currency);
-      document.getElementById('dealValuation').innerText = s.valuationAsked ? 'Valo demandée : ' + formatCur(s.valuationAsked, s.currency) : '';
-      document.getElementById('dealDescription').innerText = (s.description || '') + (s.valueProposition ? '\\n\\n' + s.valueProposition : '');
+      document.getElementById('dealName').textContent = s.name || 'Startup';
+      document.getElementById('dealSectorStage').textContent = (s.sector || '') + ' · ' + (s.stage || '') + ' · ' + (s.city || '') + ' (' + (s.country || '') + ')';
+      document.getElementById('dealTarget').textContent = formatCur(s.targetAmount, s.currency);
+      document.getElementById('dealValuation').textContent = s.valuationAsked ? 'Valo demandée : ' + formatCur(s.valuationAsked, s.currency) : '';
+      document.getElementById('dealDescription').textContent = (s.description || '') + (s.valueProposition ? '\\n\\n' + s.valueProposition : '');
 
-      if (data.financials && data.financials.annualData) {
+      if (data.financials && Array.isArray(data.financials.annualData)) {
         const fin = data.financials;
         document.getElementById('finBlock').classList.remove('hidden');
         const tbody = document.getElementById('finTableBody');
-        tbody.innerHTML = '';
+        tbody.textContent = '';
         fin.annualData.forEach(p => {
           const row = document.createElement('tr');
-          row.innerHTML = '<td>' + p.year + (p.isForecast ? ' (P)' : '') + '</td>'
-            + '<td>' + formatCur(p.arr || p.revenue, fin.currency) + '</td>'
-            + '<td>' + formatCur(p.grossMargin, fin.currency) + ' (' + (p.grossMarginPercent || 0) + '%)</td>'
-            + '<td>' + formatCur(p.ebitda, fin.currency) + '</td>'
-            + '<td>' + formatCur(p.cashBalance, fin.currency) + '</td>'
-            + '<td>' + (p.runwayMonths > 60 ? 'Cash flow +' : p.runwayMonths + ' mois') + '</td>';
+          row.appendChild(createCell(p.year + (p.isForecast ? ' (P)' : '')));
+          row.appendChild(createCell(formatCur(p.arr || p.revenue, fin.currency)));
+          row.appendChild(createCell(formatCur(p.grossMargin, fin.currency) + ' (' + (p.grossMarginPercent || 0) + '%)'));
+          row.appendChild(createCell(formatCur(p.ebitda, fin.currency)));
+          row.appendChild(createCell(formatCur(p.cashBalance, fin.currency)));
+          row.appendChild(createCell(p.runwayMonths > 60 ? 'Cash flow +' : p.runwayMonths + ' mois'));
           tbody.appendChild(row);
         });
       }
 
-      if (data.valuations && data.valuations.length) {
+      if (data.valuations && Array.isArray(data.valuations) && data.valuations.length) {
         document.getElementById('valBlock').classList.remove('hidden');
         const vList = document.getElementById('valList');
-        vList.innerHTML = '';
+        vList.textContent = '';
         data.valuations.forEach(v => {
           const item = document.createElement('div');
           item.className = 'stat-box';
-          item.innerHTML = '<div style="font-weight:600; font-size:14px; color:#F1F5F9;">' + v.methodLabel + '</div>'
-            + '<div style="font-size:18px; font-weight:700; color:#10B981; margin-top:4px;">' + formatCur(v.calculatedPreMoney) + ' Pre-Money</div>'
-            + '<div style="font-size:12px; color:#64748B; margin-top:2px;">Fourchette : ' + formatCur(v.lowEstimate) + ' — ' + formatCur(v.highEstimate) + '</div>';
+
+          const title = document.createElement('div');
+          title.style.fontWeight = '600';
+          title.style.fontSize = '14px';
+          title.style.color = '#F1F5F9';
+          title.textContent = v.methodLabel || 'Méthode';
+          item.appendChild(title);
+
+          const preMoney = document.createElement('div');
+          preMoney.style.fontSize = '18px';
+          preMoney.style.fontWeight = '700';
+          preMoney.style.color = '#10B981';
+          preMoney.style.marginTop = '4px';
+          preMoney.textContent = formatCur(v.calculatedPreMoney) + ' Pre-Money';
+          item.appendChild(preMoney);
+
+          const range = document.createElement('div');
+          range.style.fontSize = '12px';
+          range.style.color = '#64748B';
+          range.style.marginTop = '2px';
+          range.textContent = 'Fourchette : ' + formatCur(v.lowEstimate) + ' — ' + formatCur(v.highEstimate);
+          item.appendChild(range);
+
           vList.appendChild(item);
         });
       }
 
-      if (data.dueDiligence && data.dueDiligence.length) {
+      if (data.dueDiligence && Array.isArray(data.dueDiligence) && data.dueDiligence.length) {
         document.getElementById('ddBlock').classList.remove('hidden');
         const ddList = document.getElementById('ddList');
-        ddList.innerHTML = '';
+        ddList.textContent = '';
         data.dueDiligence.forEach(d => {
           const item = document.createElement('div');
           item.style.padding = '8px 12px';
           item.style.border = '1px solid #1E293B';
           item.style.borderRadius = '6px';
           item.style.fontSize = '13px';
-          item.innerHTML = '<span style="color:#94A3B8;">' + d.categoryLabel + ' :</span> <strong>' + d.title + '</strong> · ' + d.status.toUpperCase();
+
+          const cat = document.createElement('span');
+          cat.style.color = '#94A3B8';
+          cat.textContent = (d.categoryLabel || 'Item') + ' : ';
+          item.appendChild(cat);
+
+          const strong = document.createElement('strong');
+          strong.textContent = d.title || '';
+          item.appendChild(strong);
+
+          const status = document.createTextNode(' · ' + (d.status || '').toUpperCase());
+          item.appendChild(status);
+
           ddList.appendChild(item);
         });
       }

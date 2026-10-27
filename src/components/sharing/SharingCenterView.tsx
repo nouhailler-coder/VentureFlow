@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Share2,
   FileCode,
@@ -16,6 +16,9 @@ import {
   ArrowRight,
   ShieldCheck,
   ShieldAlert,
+  Send,
+  Inbox,
+  Radio,
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import {
@@ -26,6 +29,10 @@ import {
   EncryptedExportFile,
   ExportPackageData,
 } from '../../services/shareService';
+import {
+  P2PShareSession,
+  P2PConnectionState,
+} from '../../services/p2pShareService';
 import { ShareExportFilter } from '../../types';
 
 export const SharingCenterView: React.FC = () => {
@@ -52,11 +59,30 @@ export const SharingCenterView: React.FC = () => {
   const [decryptedViewerData, setDecryptedViewerData] = useState<ExportPackageData | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
 
-  // Mode B: Direct P2P WebRTC Simulation State
-  const [p2pSessionId, setP2pSessionId] = useState<string>('p2p_sess_' + Math.random().toString(36).slice(2, 9));
-  const [p2pSecret, setP2pSecret] = useState<string>('DirectKey_' + Math.random().toString(36).slice(2, 10));
-  const [p2pStatus, setP2pStatus] = useState<'idle' | 'waiting' | 'connected' | 'terminated'>('idle');
-  const [copiedLink, setCopiedLink] = useState(false);
+  // Mode B: Real WebRTC P2P Direct State
+  const [p2pRole, setP2pRole] = useState<'sender' | 'receiver'>('sender');
+  const [p2pSessionId, setP2pSessionId] = useState<string>(() => 'p2p_' + Math.random().toString(36).slice(2, 9));
+  const [p2pSecret, setP2pSecret] = useState<string>('P2PKey_' + Math.random().toString(36).slice(2, 8));
+  const [p2pStatus, setP2pStatus] = useState<P2PConnectionState>('idle');
+  const [p2pStatusDetail, setP2pStatusDetail] = useState<string>('Prêt pour partage direct WebRTC.');
+  const [p2pOfferToken, setP2pOfferToken] = useState<string>('');
+  const [p2pAnswerToken, setP2pAnswerToken] = useState<string>('');
+  const [p2pInputToken, setP2pInputToken] = useState<string>('');
+  const [p2pReceivedPackage, setP2pReceivedPackage] = useState<EncryptedExportFile | null>(null);
+  const [p2pDecryptedData, setP2pDecryptedData] = useState<ExportPackageData | null>(null);
+  const [p2pDecryptionKey, setP2pDecryptionKey] = useState<string>('');
+  const [p2pError, setP2pError] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const p2pSessionRef = useRef<P2PShareSession | null>(null);
+
+  // Clean up P2P session on unmount
+  useEffect(() => {
+    return () => {
+      if (p2pSessionRef.current) {
+        p2pSessionRef.current.close();
+      }
+    };
+  }, []);
 
   const selectedStartup = startups.find((s) => s.id === selectedStartupId);
 
@@ -492,102 +518,411 @@ export const SharingCenterView: React.FC = () => {
         </div>
       )}
 
-      {/* MODE B: PARTAGE DIRECT P2P */}
+      {/* MODE B: PARTAGE DIRECT P2P WEBRTC (RÉEL ET OPÉRATIONNEL) */}
       {activeMode === 'mode_b_direct' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800/80 rounded-xl p-5 space-y-5">
-            <div className="pb-3 border-b border-slate-800">
-              <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                <Wifi className="w-4 h-4 text-emerald-400" />
-                <span>Connexion Directe WebRTC entre Navigateurs (Mode B)</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Échange de données éphémères chiffrées de bout en bout sans base de données intermédiaire
-              </p>
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 space-y-5 transition-colors shadow-xs">
+            <div className="pb-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-emerald-500" />
+                  <span>Partage Direct P2P entre Navigateurs (Mode B)</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Échange direct chiffré de bout en bout via WebRTC DataChannel · Zéro serveur de stockage intermédiaire
+                </p>
+              </div>
+
+              {/* Sender / Receiver Toggle */}
+              <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setP2pRole('sender');
+                    setP2pError(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    p2pRole === 'sender'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Émetteur (Partager)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setP2pRole('receiver');
+                    setP2pError(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    p2pRole === 'receiver'
+                      ? 'bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Inbox className="w-3.5 h-3.5" />
+                  <span>Récepteur (Ouvrir)</span>
+                </button>
+              </div>
             </div>
 
-            {/* Session parameters */}
-            <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Identifiant de session éphémère :</span>
-                <span className="font-mono text-emerald-400 font-semibold">{p2pSessionId}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Clé de chiffrement transmise hors bande :</span>
-                <span className="font-mono text-cyan-400 font-semibold">{p2pSecret}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-900">
-                <span className="text-slate-400">État du canal DataChannel :</span>
-                <span className="font-mono text-xs">
-                  {p2pStatus === 'idle' && <span className="text-slate-400">Prêt</span>}
-                  {p2pStatus === 'waiting' && <span className="text-amber-400">En attente de connexion du pair...</span>}
-                  {p2pStatus === 'connected' && <span className="text-emerald-400 font-bold">Connecté (Chiffré E2EE)</span>}
-                  {p2pStatus === 'terminated' && <span className="text-rose-400">Session terminée</span>}
+            {/* Status indicator bar */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">État du canal P2P :</span>
+                <span className="font-mono font-semibold flex items-center gap-1.5">
+                  {p2pStatus === 'idle' && <span className="text-slate-500">Inactif (Prêt)</span>}
+                  {p2pStatus === 'generating_offer' && <span className="text-amber-500 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Préparation de l'offre...</span>}
+                  {p2pStatus === 'waiting_for_peer' && <span className="text-amber-500 flex items-center gap-1"><Radio className="w-3.5 h-3.5 animate-pulse" /> En attente du pair...</span>}
+                  {p2pStatus === 'connecting' && <span className="text-cyan-500 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Négociation WebRTC...</span>}
+                  {p2pStatus === 'connected' && <span className="text-emerald-500 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Connecté (Chiffré E2EE)</span>}
+                  {p2pStatus === 'transfer_complete' && <span className="text-emerald-500 font-bold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Transfert accompli</span>}
+                  {p2pStatus === 'closed' && <span className="text-slate-500">Session fermée</span>}
+                  {p2pStatus === 'error' && <span className="text-rose-500 font-bold">Erreur de connexion</span>}
                 </span>
               </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">{p2pStatusDetail}</p>
             </div>
 
-            {/* Action buttons */}
-            <div className="flex gap-3">
-              {p2pStatus === 'idle' && (
+            {p2pError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-xl text-xs text-rose-800 dark:text-rose-300">
+                {p2pError}
+              </div>
+            )}
+
+            {/* ROLE 1: SENDER FLOW */}
+            {p2pRole === 'sender' && (
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Startup à transmettre en direct :
+                  </label>
+                  <select
+                    value={selectedStartupId}
+                    onChange={(e) => setSelectedStartupId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white"
+                  >
+                    {startups.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.sector} · {s.stage})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Phrase secrète de déchiffrement (transmise hors-bande au destinataire) :
+                  </label>
+                  <input
+                    type="text"
+                    value={p2pSecret}
+                    onChange={(e) => setP2pSecret(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl font-mono text-emerald-600 dark:text-emerald-400"
+                  />
+                </div>
+
+                {p2pStatus === 'idle' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedStartup) return;
+                      setP2pError(null);
+                      try {
+                        const filter: ShareExportFilter = {
+                          startupId: selectedStartup.id,
+                          includeGeneralInfo,
+                          includeFinancials,
+                          includeValuation,
+                          includeDueDiligence,
+                          includePrivateNotes,
+                          customNoteForRecipient: customRecipientNote,
+                        };
+                        const pkgData = prepareSelectiveDataPackage(
+                          filter,
+                          selectedStartup,
+                          analyses[selectedStartup.id],
+                          financials[selectedStartup.id],
+                          valuations[selectedStartup.id],
+                          dueDiligence[selectedStartup.id]
+                        );
+                        const encPkg = await createEncryptedPackage(pkgData, p2pSecret);
+
+                        const session = new P2PShareSession(
+                          p2pSessionId,
+                          (state, detail) => {
+                            setP2pStatus(state);
+                            if (detail) setP2pStatusDetail(detail);
+                          },
+                          () => {}
+                        );
+                        p2pSessionRef.current = session;
+                        const offer = await session.createSenderOffer(encPkg);
+                        setP2pOfferToken(offer);
+                      } catch (err: any) {
+                        setP2pError('Impossible de démarrer la session WebRTC : ' + err.message);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Wifi className="w-4 h-4" />
+                    <span>Créer le canal WebRTC direct & Chiffrer le dossier</span>
+                  </button>
+                )}
+
+                {/* Offer token box */}
+                {p2pOfferToken && (
+                  <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        Étape 1 : Copiez le Token d'invitation WebRTC
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(p2pOfferToken);
+                          setCopiedToken('offer');
+                          setTimeout(() => setCopiedToken(null), 2000);
+                        }}
+                        className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-semibold cursor-pointer"
+                      >
+                        {copiedToken === 'offer' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedToken === 'offer' ? 'Copié !' : 'Copier le token'}</span>
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      rows={3}
+                      value={p2pOfferToken}
+                      className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-[10px] text-slate-600 dark:text-slate-400 select-all"
+                    />
+
+                    {p2pStatus === 'waiting_for_peer' && (
+                      <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          Étape 2 : Collez le Token de réponse du destinataire
+                        </span>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Collez ici le token généré par le récepteur..."
+                            value={p2pInputToken}
+                            onChange={(e) => setP2pInputToken(e.target.value)}
+                            className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!p2pSessionRef.current || !p2pInputToken) return;
+                              setP2pError(null);
+                              try {
+                                await p2pSessionRef.current.acceptReceiverAnswer(p2pInputToken.trim());
+                              } catch (err: any) {
+                                setP2pError('Token de réponse invalide : ' + err.message);
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                          >
+                            Valider
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ROLE 2: RECEIVER FLOW */}
+            {p2pRole === 'receiver' && (
+              <div className="space-y-4 text-xs">
+                <div className="space-y-2">
+                  <label className="block font-medium text-slate-700 dark:text-slate-300">
+                    Collez le Token d'invitation WebRTC fourni par l'émetteur :
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Collez le token d'offre WebRTC reçu..."
+                    value={p2pInputToken}
+                    onChange={(e) => setP2pInputToken(e.target.value)}
+                    className="w-full p-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl font-mono text-xs"
+                  />
+                  {p2pStatus === 'idle' && (
+                    <button
+                      type="button"
+                      disabled={!p2pInputToken.trim()}
+                      onClick={async () => {
+                        setP2pError(null);
+                        try {
+                          const session = new P2PShareSession(
+                            p2pSessionId,
+                            (state, detail) => {
+                              setP2pStatus(state);
+                              if (detail) setP2pStatusDetail(detail);
+                            },
+                            (receivedPkg) => {
+                              setP2pReceivedPackage(receivedPkg);
+                            }
+                          );
+                          p2pSessionRef.current = session;
+                          const ansToken = await session.acceptSenderOffer(p2pInputToken.trim());
+                          setP2pAnswerToken(ansToken);
+                        } catch (err: any) {
+                          setP2pError('Impossible de traiter l\'invitation WebRTC : ' + err.message);
+                        }
+                      }}
+                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <Inbox className="w-4 h-4" />
+                      <span>Rejoindre la session WebRTC</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Receiver Answer token box */}
+                {p2pAnswerToken && (
+                  <div className="p-4 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        Renvoyez ce Token de Réponse à l'émetteur :
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(p2pAnswerToken);
+                          setCopiedToken('answer');
+                          setTimeout(() => setCopiedToken(null), 2000);
+                        }}
+                        className="flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-400 font-semibold cursor-pointer"
+                      >
+                        {copiedToken === 'answer' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedToken === 'answer' ? 'Copié !' : 'Copier la réponse'}</span>
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      rows={3}
+                      value={p2pAnswerToken}
+                      className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-[10px] text-slate-600 dark:text-slate-400 select-all"
+                    />
+                  </div>
+                )}
+
+                {/* Received package decryption prompt */}
+                {p2pReceivedPackage && !p2pDecryptedData && (
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-xl space-y-3">
+                    <div className="font-semibold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      <span>Paquet de données chiffré reçu directement par WebRTC !</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                      Saisissez la clé convenue séparément avec l'émetteur pour déchiffrer le rapport en mémoire vive :
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        placeholder="Phrase secrète de déchiffrement..."
+                        value={p2pDecryptionKey}
+                        onChange={(e) => setP2pDecryptionKey(e.target.value)}
+                        className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const decrypted = await decryptExportPackage(p2pReceivedPackage, p2pDecryptionKey);
+                            setP2pDecryptedData(decrypted);
+                          } catch {
+                            setP2pError('Déchiffrement échoué : phrase secrète incorrecte.');
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                      >
+                        Déchiffrer
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Display decrypted P2P Report */}
+                {p2pDecryptedData && (
+                  <div className="p-5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                        {p2pDecryptedData.startup.name}
+                      </h3>
+                      <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
+                        Lecture Seule P2P
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {p2pDecryptedData.startup.description}
+                    </div>
+                    {p2pDecryptedData.startup.targetAmount && (
+                      <div className="text-xs">
+                        <span className="text-slate-500">Montant levée : </span>
+                        <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                          {p2pDecryptedData.startup.targetAmount.toLocaleString('fr-FR')} €
+                        </span>
+                      </div>
+                    )}
+                    {p2pDecryptedData.analysis && (
+                      <div className="text-xs">
+                        <span className="text-slate-500">Score Composite VC : </span>
+                        <span className="font-bold font-mono text-slate-900 dark:text-white">
+                          {p2pDecryptedData.analysis.compositeScore}/100
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Session termination button */}
+            {p2pStatus !== 'idle' && (
+              <div className="pt-2 flex justify-end">
                 <button
-                  onClick={() => setP2pStatus('waiting')}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  Ouvrir la session d'écoute P2P
-                </button>
-              )}
-              {p2pStatus === 'waiting' && (
-                <button
-                  onClick={() => setP2pStatus('connected')}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  Simuler la connexion du destinataire
-                </button>
-              )}
-              {p2pStatus === 'connected' && (
-                <button
-                  onClick={() => setP2pStatus('terminated')}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  Couper la connexion & fermer la session
-                </button>
-              )}
-              {p2pStatus === 'terminated' && (
-                <button
+                  type="button"
                   onClick={() => {
-                    setP2pSessionId('p2p_sess_' + Math.random().toString(36).slice(2, 9));
-                    setP2pSecret('DirectKey_' + Math.random().toString(36).slice(2, 10));
-                    setP2pStatus('idle');
+                    if (p2pSessionRef.current) {
+                      p2pSessionRef.current.close();
+                      p2pSessionRef.current = null;
+                    }
+                    setP2pStatus('closed');
+                    setP2pOfferToken('');
+                    setP2pAnswerToken('');
+                    setP2pInputToken('');
+                    setP2pReceivedPackage(null);
+                    setP2pDecryptedData(null);
+                    setP2pStatusDetail('Session P2P fermée et mémoire purgée.');
                   }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/50 rounded-xl font-semibold transition-colors cursor-pointer"
                 >
-                  Générer une nouvelle session
+                  Fermer la session P2P & purger la mémoire
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Right Col: Section 5.4 Mandatory Disclosures */}
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+          <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-5 space-y-4 shadow-xs transition-colors">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4" />
               <span>Avertissements Obligatoires (Section 5.4)</span>
             </h3>
 
-            <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               <p>
-                <strong>1. Aucune révocation rétroactive :</strong> La coupure de session interrompt
-                les transferts futurs mais ne peut techniquement effacer les données déjà affichées,
-                mémorisées ou enregistrées par le destinataire.
+                <strong>1. Aucune révocation rétroactive :</strong> La fermeture du canal DataChannel interrompt les transferts futurs mais ne peut techniquement effacer les données déjà affichées ou mémorisées par le récepteur.
               </p>
               <p>
-                <strong>2. Risque de capture :</strong> L'affichage en lecture seule n'empêche pas
-                la réalisation de captures d'écran, photos ou transcriptions par le destinataire.
+                <strong>2. Risque de capture d'écran :</strong> L'affichage en lecture seule n'empêche pas la réalisation de captures d'écran ou transcriptions par le destinataire.
               </p>
               <p>
-                <strong>3. Repli hors ligne :</strong> En cas de restriction de pare-feu d'entreprise ou
-                d'échec WebRTC, privilégiez le <em>Mode A — Export chiffré autonome</em>.
+                <strong>3. Repli hors ligne garanti :</strong> Si les pare-feux d'entreprise stricts bloquent l'échange WebRTC direct sans serveur TURN tiers, privilégiez le <em>Mode A — Export chiffré autonome</em>, 100% hors-ligne.
               </p>
             </div>
           </div>

@@ -231,7 +231,12 @@ export interface VaultMetadata {
   iterations: number;
   encryptedMasterKeyBase64: string;
   passkeyCredentialId?: string;
-  encryptedMasterKeyPasskey?: string;
+  passkeyPrfEnabled?: boolean;
+  passkeyPrfSaltBase64?: string;
+  encryptedMasterKeyPasskey?: {
+    wrappedKeyBase64: string;
+    ivBase64: string;
+  } | string;
   createdAt: string;
   lastUnlockedAt?: string;
 }

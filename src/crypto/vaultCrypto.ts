@@ -12,6 +12,36 @@ export const AES_GCM_KEY_LENGTH = 256;
 export const IV_LENGTH_BYTES = 12;
 export const SALT_LENGTH_BYTES = 16;
 
+function getCrypto(): Crypto {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+    return globalThis.crypto;
+  }
+  if (typeof window !== 'undefined' && window.crypto) {
+    return window.crypto;
+  }
+  throw new Error('Web Crypto API non disponible dans cet environnement.');
+}
+
+function safeBtoa(binary: string): string {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.btoa === 'function') {
+    return globalThis.btoa(binary);
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(binary, 'binary').toString('base64');
+  }
+  throw new Error('btoa non disponible dans cet environnement.');
+}
+
+function safeAtob(base64: string): string {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.atob === 'function') {
+    return globalThis.atob(base64);
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(base64, 'base64').toString('binary');
+  }
+  throw new Error('atob non disponible dans cet environnement.');
+}
+
 /** Convert Uint8Array to Base64 string safely */
 export function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -20,12 +50,12 @@ export function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   for (let i = 0; i < len; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return window.btoa(binary);
+  return safeBtoa(binary);
 }
 
 /** Convert Base64 string to Uint8Array safely */
 export function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = window.atob(base64);
+  const binary = safeAtob(base64);
   const len = binary.length;
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) {
@@ -36,8 +66,9 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 
 /** Generate cryptographically strong random bytes */
 export function generateRandomBytes(length: number): Uint8Array {
+  const crypto = getCrypto();
   const bytes = new Uint8Array(length);
-  window.crypto.getRandomValues(bytes);
+  crypto.getRandomValues(bytes);
   return bytes;
 }
 
@@ -47,8 +78,9 @@ export async function deriveKeyFromPassphrase(
   salt: Uint8Array,
   iterations = PBKDF2_DEFAULT_ITERATIONS
 ): Promise<CryptoKey> {
+  const crypto = getCrypto();
   const encoder = new TextEncoder();
-  const passphraseKey = await window.crypto.subtle.importKey(
+  const passphraseKey = await crypto.subtle.importKey(
     'raw',
     encoder.encode(passphrase),
     { name: 'PBKDF2' },
@@ -56,7 +88,7 @@ export async function deriveKeyFromPassphrase(
     ['deriveKey']
   );
 
-  return window.crypto.subtle.deriveKey(
+  return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: salt as BufferSource,
@@ -72,7 +104,8 @@ export async function deriveKeyFromPassphrase(
 
 /** Generate an ephemeral/master AES-GCM 256-bit Data Encryption Key (DEK) */
 export async function generateMasterVaultKey(): Promise<CryptoKey> {
-  return window.crypto.subtle.generateKey(
+  const crypto = getCrypto();
+  return crypto.subtle.generateKey(
     { name: 'AES-GCM', length: AES_GCM_KEY_LENGTH },
     true, // extractable so it can be wrapped and persisted in encrypted form
     ['encrypt', 'decrypt']
@@ -84,8 +117,9 @@ export async function wrapMasterKey(
   masterKey: CryptoKey,
   wrappingKey: CryptoKey
 ): Promise<{ wrappedKeyBase64: string; ivBase64: string }> {
+  const crypto = getCrypto();
   const iv = generateRandomBytes(IV_LENGTH_BYTES);
-  const wrapped = await window.crypto.subtle.wrapKey(
+  const wrapped = await crypto.subtle.wrapKey(
     'raw',
     masterKey,
     wrappingKey,
@@ -104,10 +138,11 @@ export async function unwrapMasterKey(
   ivBase64: string,
   wrappingKey: CryptoKey
 ): Promise<CryptoKey> {
+  const crypto = getCrypto();
   const wrappedBuffer = base64ToUint8Array(wrappedKeyBase64);
   const iv = base64ToUint8Array(ivBase64);
 
-  return window.crypto.subtle.unwrapKey(
+  return crypto.subtle.unwrapKey(
     'raw',
     wrappedBuffer as BufferSource,
     wrappingKey,
@@ -123,11 +158,12 @@ export async function encryptData(
   data: unknown,
   key: CryptoKey
 ): Promise<{ ciphertextBase64: string; ivBase64: string }> {
+  const crypto = getCrypto();
   const encoder = new TextEncoder();
   const plaintext = encoder.encode(JSON.stringify(data));
   const iv = generateRandomBytes(IV_LENGTH_BYTES);
 
-  const ciphertext = await window.crypto.subtle.encrypt(
+  const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv as BufferSource },
     key,
     plaintext
@@ -145,10 +181,11 @@ export async function decryptData<T>(
   ivBase64: string,
   key: CryptoKey
 ): Promise<T> {
+  const crypto = getCrypto();
   const ciphertext = base64ToUint8Array(ciphertextBase64);
   const iv = base64ToUint8Array(ivBase64);
 
-  const decrypted = await window.crypto.subtle.decrypt(
+  const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: iv as BufferSource },
     key,
     ciphertext as BufferSource
@@ -160,8 +197,9 @@ export async function decryptData<T>(
 
 /** Compute HMAC-SHA-256 digest of data using a secret passphrase string */
 export async function computeHmac(data: string, secret: string): Promise<string> {
+  const crypto = getCrypto();
   const encoder = new TextEncoder();
-  const key = await window.crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     'raw',
     encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
@@ -169,7 +207,7 @@ export async function computeHmac(data: string, secret: string): Promise<string>
     ['sign']
   );
 
-  const signature = await window.crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
   return arrayBufferToBase64(signature);
 }
 
