@@ -1,0 +1,640 @@
+# VentureFlow — Cahier des charges fonctionnel et technique
+## Version 2.0 — Architecture local-first et confidentialité financière renforcée
+
+**Statut :** spécification de référence pour l'implémentation  
+**Type :** application web progressive (PWA) d'analyse, d'évaluation et de suivi de startups  
+**Principes structurants :** local-first, chiffrement côté client, passkeys, absence d'identité centralisée, partage sélectif en lecture seule et absence de synchronisation cloud des données métier en clair.
+
+---
+
+## 1. Objectif du projet
+
+Développer une PWA permettant d'analyser des startups, de documenter les opportunités d'investissement, d'estimer leur valorisation, de suivre un pipeline d'investissement et de produire des rapports destinés à des tiers.
+
+L'application doit combiner les fonctionnalités d'un CRM d'investissement, d'un outil d'analyse financière et d'un espace de préparation à la due diligence.
+
+Elle doit être utilisable sans compte centralisé et sans serveur métier obligatoire. Les données restent sous le contrôle de l'utilisateur.
+
+### Exigence de confidentialité absolue
+
+Aucune donnée financière métier ne doit être transmise en clair à un fournisseur cloud.
+
+Aucun fournisseur d'hébergement, de stockage, de signalisation, de relais réseau ou d'authentification ne doit posséder les clés permettant de déchiffrer les données financières.
+
+Cette exigence couvre notamment :
+- les noms des startups et les informations confidentielles associées ;
+- les revenus, coûts, marges, projections, trésorerie et valorisations ;
+- les notes d'analyse, scores, hypothèses et recommandations ;
+- les documents de due diligence et les pièces jointes ;
+- les rapports privés, historiques et commentaires ;
+- les données personnelles et coordonnées de contacts lorsqu'elles sont considérées comme confidentielles.
+
+Les données utilisées dans les calculs sont déchiffrées uniquement dans le navigateur d'un utilisateur autorisé, pendant la session où elles sont nécessaires.
+
+---
+
+## 2. Architecture générale
+
+### 2.1 Architecture retenue
+
+- Frontend : React, TypeScript et Vite.
+- Distribution : PWA statique hébergée sur Cloudflare Pages, Netlify ou un hébergement statique équivalent.
+- Stockage métier : IndexedDB dans le navigateur.
+- Chiffrement : Web Crypto API, avec chiffrement réalisé avant toute exportation ou transmission.
+- Authentification locale : WebAuthn/passkeys, sans compte centralisé.
+- Partage : export chiffré autonome et partage direct entre navigateurs.
+- Fonctionnement hors ligne : accès aux données locales, calculs et analyses sans connexion Internet, une fois l'application installée et ses ressources mises en cache.
+
+Aucun backend métier, serveur de synchronisation, base de données distante, service d'authentification centralisé ou stockage cloud de données métier n'est requis.
+
+Le projet ne doit pas dépendre de Firebase, Firestore, Supabase, d'une base PostgreSQL distante ou d'un service SaaS pour conserver les dossiers d'investissement.
+
+### 2.2 Frontières de confiance
+
+**Zone de confiance : navigateur de l'utilisateur**
+- Déchiffrement des données autorisées.
+- Calcul des indicateurs financiers.
+- Consultation des dossiers.
+- Production des rapports.
+- Préparation et déchiffrement des partages.
+- Gestion locale des clés.
+
+**Zone non fiable : fournisseurs et services externes**
+- Hébergement des fichiers statiques de l'application.
+- Éventuel service de signalisation pour établir une connexion directe.
+- Éventuels relais réseau nécessaires au transport chiffré.
+- Sites de sources financières consultés volontairement.
+
+Ces composants ne doivent recevoir ni données métier en clair ni clés de déchiffrement.
+
+### 2.3 Limite de sécurité à documenter
+
+Un hébergement statique ne stocke pas les dossiers métier, mais il distribue le code JavaScript exécuté par le navigateur. Un fournisseur d'hébergement compromis, ou une chaîne de déploiement compromise, pourrait théoriquement tenter de distribuer un code malveillant destiné à lire les données après déverrouillage.
+
+La confidentialité vis-à-vis du fournisseur ne peut donc pas être garantie par le seul chiffrement des données stockées. Le projet doit prévoir des protections contre les modifications malveillantes du code, documenter cette limite et ne jamais prétendre offrir une garantie absolue contre un navigateur ou un appareil compromis.
+
+---
+
+## 3. Identification forte et déverrouillage local
+
+### 3.1 Principes
+
+L'application ne crée pas de compte utilisateur centralisé.
+
+L'utilisateur doit pouvoir déverrouiller son espace privé au moyen d'une passkey compatible avec WebAuthn et, selon les capacités du navigateur et de l'authentificateur, une vérification locale biométrique ou par code de l'appareil.
+
+La biométrie n'est pas transmise à l'application : elle reste gérée par le système d'exploitation ou l'authentificateur.
+
+### 3.2 Distinction entre passkey et clé de chiffrement
+
+Une passkey ne doit pas être considérée automatiquement comme une clé de chiffrement des données métier.
+
+L'implémentation doit prévoir :
+- une clé de chiffrement des données générée côté client ;
+- un mécanisme de déverrouillage local utilisant une passkey lorsque le navigateur et l'authentificateur prennent en charge un mécanisme adapté, par exemple WebAuthn PRF ;
+- un mécanisme de secours par phrase secrète robuste si cette fonctionnalité n'est pas disponible ;
+- la protection de la clé de chiffrement par une clé de déverrouillage appropriée ;
+- un mécanisme de sauvegarde chiffrée permettant la récupération après perte de l'appareil.
+
+Les clés privées WebAuthn ne sont jamais exportées ni utilisées comme si elles étaient directement accessibles à JavaScript.
+
+Le comportement de secours doit être explicite : aucune passkey ni phrase secrète ne doit être présentée comme une garantie de récupération si aucune copie de la clé chiffrée n'a été sauvegardée.
+
+### 3.3 Exigences fonctionnelles
+
+- Création du coffre local.
+- Configuration du déverrouillage.
+- Verrouillage manuel et verrouillage après inactivité.
+- Verrouillage lorsque l'application passe en arrière-plan, selon les possibilités du navigateur.
+- Verrouillage à la fermeture de la session.
+- Déverrouillage local.
+- Changement de phrase secrète et renouvellement des clés de protection.
+- Exportation d'une sauvegarde chiffrée.
+- Importation et vérification d'une sauvegarde.
+- Procédure documentée en cas de perte de passkey, d'oubli de phrase secrète ou de perte de l'appareil.
+
+Après verrouillage, les clés de session doivent être retirées de l'état applicatif et les références aux données déchiffrées doivent être libérées autant que possible. Le projet doit reconnaître qu'un navigateur ne permet pas de garantir l'effacement physique immédiat de toutes les copies mémoire.
+
+---
+
+## 4. Modèle de chiffrement
+
+### 4.1 Chiffrement des données locales
+
+Utiliser des primitives cryptographiques standard et disponibles dans Web Crypto API.
+
+Exigences minimales :
+- AES-GCM 256 bits pour chiffrer les données métier ;
+- génération cryptographiquement sûre des clés et des nonces ;
+- non-réutilisation des nonces avec une même clé AES-GCM ;
+- dérivation de clé depuis une phrase secrète avec PBKDF2-SHA-256 et un nombre d'itérations configurable et adapté aux performances, ou recours à un mécanisme de dérivation mieux adapté lorsqu'il est disponible et justifié ;
+- stockage séparé des métadonnées nécessaires au déchiffrement et des données chiffrées ;
+- versionnement du format cryptographique ;
+- authentification de l'intégrité des données ;
+- gestion des erreurs de déchiffrement sans révéler d'information sensible.
+
+Ne jamais inventer un algorithme cryptographique maison.
+
+La clé de chiffrement des données ne doit pas être enregistrée en clair dans IndexedDB, localStorage, les fichiers exportés ou les journaux.
+
+### 4.2 Organisation des données
+
+Deux approches peuvent être évaluées :
+1. chiffrement de chaque dossier ou objet métier indépendamment ;
+2. chiffrement par lots avec une clé de données, elle-même protégée par une clé de coffre.
+
+Choisir l'approche qui simplifie la récupération, la rotation des clés et le partage sélectif sans compromettre l'isolation entre dossiers.
+
+Les noms de startups, les notes et les montants financiers ne doivent pas apparaître dans les clés de stockage, noms de fichiers temporaires, URLs ou métadonnées externes.
+
+Les métadonnées indispensables au fonctionnement local peuvent rester lisibles dans le navigateur si elles ne contiennent pas d'informations métier sensibles. Toute métadonnée susceptible de révéler une relation commerciale, un nom de startup ou une valorisation doit être chiffrée.
+
+### 4.3 Sauvegardes
+
+- Export complet du coffre sous forme d'une archive chiffrée.
+- Importation après authentification locale et vérification d'intégrité.
+- Contrôle de version et compatibilité des formats.
+- Possibilité de sauvegarder le fichier sur un support choisi par l'utilisateur.
+- Aucun envoi automatique vers un service cloud.
+- Aucune télémétrie contenant le contenu des dossiers.
+- Aucun mécanisme de récupération des clés par l'éditeur.
+
+Une sauvegarde chiffrée est inutilisable sans la clé ou la phrase secrète nécessaire. Cette conséquence doit être présentée clairement à l'utilisateur.
+
+---
+
+## 5. Partage des informations : deux modes complémentaires
+
+Le partage est sélectif, explicitement déclenché par l'utilisateur et en lecture seule.
+
+Le destinataire ne doit recevoir que les informations sélectionnées. Le partage ne doit jamais ouvrir automatiquement le coffre complet.
+
+### 5.1 Mode A — Export chiffré autonome
+
+L'utilisateur choisit :
+- la startup concernée ;
+- les sections à inclure ;
+- les indicateurs financiers autorisés ;
+- les notes ou documents à partager ;
+- la période ou la version du rapport ;
+- le niveau de détail.
+
+L'application produit un fichier autonome contenant un rapport ou un paquet de données chiffré.
+
+Le fichier doit être :
+- chiffré côté client avant d'être écrit ou transféré ;
+- déchiffrable uniquement avec un secret ou une clé remis séparément au destinataire ;
+- vérifié à l'ouverture ;
+- en lecture seule ;
+- accompagné d'une indication de date et de version ;
+- indépendant d'un serveur de consultation propriétaire.
+
+Un fichier HTML autonome peut être utilisé pour afficher un rapport après déchiffrement local, à condition que son code soit fiable, auditable et ne réalise aucune transmission de données.
+
+Un format de données chiffré avec un visualiseur statique vérifié peut être préférable si cela réduit les risques d'exécution de code embarqué.
+
+L'application doit proposer une procédure de remise du fichier et du secret par des canaux distincts.
+
+Le fichier exporté reste sous le contrôle du destinataire après sa remise. Il ne peut pas être rappelé à distance.
+
+### 5.2 Mode B — Partage direct entre navigateurs
+
+L'application permet de partager un rapport sélectionné avec un autre navigateur sans stockage cloud des données métier.
+
+Le fonctionnement recommandé repose sur :
+- une sélection explicite des informations ;
+- la création d'un paquet temporaire chiffré côté émetteur ;
+- l'établissement d'une connexion directe WebRTC lorsque cela est possible ;
+- un échange de clés ou de secrets conçu pour que seuls les participants autorisés puissent déchiffrer le contenu ;
+- le transfert des données chiffrées ;
+- le déchiffrement uniquement dans le navigateur du destinataire ;
+- un visualiseur en lecture seule ;
+- l'expiration de la session et l'effacement des données temporaires au mieux des possibilités du navigateur.
+
+Un service de signalisation peut être nécessaire pour établir la connexion. Il ne doit transmettre que les informations techniques indispensables à l'établissement de la session. Il ne doit jamais recevoir les données métier en clair ou les clés de déchiffrement.
+
+Des serveurs relais TURN peuvent être nécessaires lorsque la connexion directe est impossible. Ils ne doivent transporter que des flux chiffrés. Le projet doit documenter les métadonnées réseau susceptibles d'être visibles par les opérateurs de signalisation ou de relais.
+
+Le service de signalisation, s'il existe, doit être découplé du stockage métier et ne doit pas devenir un serveur de synchronisation. Il ne doit conserver ni les dossiers, ni les rapports financiers, ni l'historique des valorisations.
+
+### 5.3 Création et ouverture du partage direct
+
+L'émetteur doit pouvoir :
+- choisir les données partagées ;
+- générer un secret de partage suffisamment robuste ;
+- obtenir un lien d'invitation ou un mécanisme de connexion ;
+- transmettre le secret séparément lorsque le lien ne suffit pas à protéger le canal ;
+- afficher l'état de la session ;
+- terminer le partage.
+
+Le destinataire doit pouvoir :
+- ouvrir l'invitation ;
+- établir la connexion avec l'émetteur ;
+- fournir ou vérifier le secret requis ;
+- consulter le rapport en lecture seule ;
+- fermer la session.
+
+Le lien ne doit pas contenir directement de données financières, de phrase secrète ou de clé de déchiffrement dans une URL transmise aux serveurs. Si un secret est placé dans le fragment d'URL pour éviter son envoi dans la requête HTTP, cette approche doit être documentée, protégée contre les fuites côté navigateur et évaluée avant validation.
+
+Le lien d'invitation n'est pas une preuve d'identité du destinataire. En l'absence d'identité centralisée, l'autorisation repose sur la possession du secret ou de la capacité de partage.
+
+### 5.4 Lecture seule et limites de révocation
+
+Le visualiseur ne doit exposer aucune fonction de modification du dossier source.
+
+L'application doit néanmoins avertir que la lecture seule dans le navigateur n'empêche pas un destinataire de prendre une capture d'écran, de photographier son écran ou de recopier les informations.
+
+La fin d'une session permet de couper la connexion et d'empêcher les échanges futurs. Elle ne peut pas effacer de façon garantie les données déjà reçues, copiées ou mémorisées par le destinataire.
+
+Aucune promesse de révocation rétroactive ne doit être faite.
+
+### 5.5 Partage hors ligne
+
+Le mode A doit fonctionner sans connexion réseau après génération du fichier.
+
+Le mode B nécessite généralement une connexion entre les participants et peut échouer selon les restrictions réseau. L'application doit proposer une solution de repli claire : générer un export chiffré.
+
+---
+
+## 6. Fonctionnalités métier
+
+### 6.1 CRM de startups
+
+Chaque fiche startup doit pouvoir contenir :
+- nom, pays, région et secteur ;
+- description et proposition de valeur ;
+- site web et sources publiques ;
+- fondateurs et contacts ;
+- stade de développement ;
+- date de création et jalons ;
+- montant recherché et type de financement ;
+- historique des échanges ;
+- notes confidentielles ;
+- statut dans le pipeline ;
+- documents et références de due diligence.
+
+Toutes ces données sont considérées comme métier et restent chiffrées au repos.
+
+### 6.2 Pipeline d'investissement
+
+Étapes configurables, par exemple :
+1. À qualifier.
+2. Premier contact.
+3. Analyse préliminaire.
+4. Rencontre.
+5. Due diligence.
+6. Négociation.
+7. Décision d'investissement.
+8. Investissement réalisé.
+9. Refusé ou abandonné.
+
+Prévoir :
+- vue tableau ;
+- vue kanban ;
+- filtres et recherche locale ;
+- dates de relance ;
+- historique des transitions ;
+- motifs de refus ;
+- tâches et échéances.
+
+### 6.3 Analyse et scoring
+
+Permettre de définir des critères pondérés :
+- qualité de l'équipe ;
+- taille et dynamique du marché ;
+- différenciation du produit ;
+- traction commerciale ;
+- revenus récurrents et croissance ;
+- marge et économie unitaire ;
+- consommation de trésorerie ;
+- durée de trésorerie disponible ;
+- concurrence ;
+- risques réglementaires et technologiques ;
+- capacité d'exécution ;
+- adéquation avec la stratégie d'investissement.
+
+Le score doit être explicable, paramétrable et accompagné des critères utilisés. Ne pas présenter un score comme une recommandation d'investissement certaine.
+
+### 6.4 Analyse financière
+
+Prévoir :
+- revenus historiques et prévisionnels ;
+- coûts et dépenses ;
+- marge brute et marge opérationnelle ;
+- EBITDA lorsque pertinent ;
+- trésorerie et consommation mensuelle ;
+- runway ;
+- besoins de financement ;
+- scénarios prudent, central et optimiste ;
+- hypothèses de croissance ;
+- indicateurs de performance ;
+- comparaisons entre périodes.
+
+Les calculs doivent être exécutés localement et testés sur des jeux de données de référence.
+
+### 6.5 Valorisation
+
+Prévoir plusieurs méthodes selon la maturité et la disponibilité des données :
+- comparables de marché ;
+- multiples de revenus ;
+- multiples d'EBITDA lorsque pertinents ;
+- méthode des flux de trésorerie actualisés lorsque les hypothèses sont suffisantes ;
+- méthode VC ;
+- scénarios de dilution et de financement ;
+- valorisation pré-money et post-money.
+
+Chaque estimation doit conserver :
+- les hypothèses ;
+- la méthode ;
+- la date d'évaluation ;
+- les données sources ;
+- les limites de la méthode ;
+- une fourchette de résultats lorsque c'est pertinent.
+
+L'application doit distinguer clairement les données vérifiées, les estimations et les hypothèses saisies par l'utilisateur.
+
+### 6.6 Due diligence
+
+Créer une liste de contrôle couvrant :
+- société et actionnariat ;
+- équipe ;
+- finances ;
+- produit et technologie ;
+- propriété intellectuelle ;
+- marché et concurrence ;
+- contrats ;
+- risques juridiques et réglementaires ;
+- cybersécurité ;
+- données personnelles ;
+- environnement et gouvernance, si pertinent.
+
+Permettre de joindre des documents, des commentaires, des sources, un statut et un niveau de risque.
+
+Les pièces jointes sont chiffrées avant leur persistance dans le coffre. Les fichiers temporaires ne doivent pas être envoyés à un service d'analyse externe par défaut.
+
+### 6.7 Portefeuille et suivi
+
+Pour les investissements réalisés :
+- montant investi ;
+- date et type d'investissement ;
+- valorisation de référence ;
+- détention et dilution ;
+- indicateurs périodiques ;
+- événements de financement ;
+- risques ;
+- historique des mises à jour ;
+- hypothèses de performance.
+
+Les estimations de rendement doivent être présentées comme des scénarios, pas comme des garanties.
+
+### 6.8 Rapports
+
+Produire localement des rapports imprimables ou exportables :
+- synthèse de startup ;
+- analyse financière ;
+- valorisation ;
+- due diligence ;
+- comparaison de plusieurs opportunités ;
+- suivi du portefeuille.
+
+Les rapports destinés à un tiers doivent être générés à partir d'une sélection explicite des champs. Aucun export ne doit inclure par défaut des notes privées ou des données non sélectionnées.
+
+---
+
+## 7. Sources externes et intelligence artificielle
+
+### 7.1 Sources publiques
+
+L'application peut permettre la saisie ou la consultation de sources publiques : sites d'entreprises, registres publics, publications financières et informations de marché.
+
+Les consultations externes doivent être initiées par l'utilisateur ou clairement documentées. Les requêtes HTTP ne doivent pas inclure de paramètres confidentiels issus du coffre.
+
+La présence d'un site web dans une fiche privée ne doit pas entraîner automatiquement la transmission de notes ou de données financières à ce site.
+
+### 7.2 Intelligence artificielle
+
+Aucune transmission à un service d'IA externe ne doit être activée par défaut.
+
+Si une assistance IA est envisagée ultérieurement :
+- les données doivent rester locales par défaut ;
+- l'envoi vers un fournisseur externe doit être volontaire, visible et précédé d'une confirmation ;
+- les champs transmis doivent être affichés avant envoi ;
+- une option de pseudonymisation ou de suppression des données sensibles doit être proposée ;
+- les clés et le coffre ne doivent jamais être transmis ;
+- les sorties IA doivent être identifiées comme générées et vérifiées avant usage.
+
+Une éventuelle IA locale pourra être intégrée ultérieurement sans modifier l'architecture de confidentialité.
+
+---
+
+## 8. Modèle de données
+
+Le modèle logique doit prévoir au minimum les entités suivantes :
+- `Startup`
+- `Contact`
+- `Interaction`
+- `PipelineStage`
+- `Task`
+- `Analysis`
+- `FinancialMetric`
+- `Forecast`
+- `Valuation`
+- `ValuationScenario`
+- `DueDiligenceItem`
+- `Document`
+- `Investment`
+- `PortfolioSnapshot`
+- `SourceReference`
+- `ShareExportMetadata`
+- `LocalSecuritySettings`
+
+Les identifiants métier doivent être aléatoires et non révélateurs. Les dates et métadonnées sensibles doivent être protégées selon leur classification.
+
+Les données métier persistées doivent être chiffrées avant leur écriture dans IndexedDB. Le modèle de stockage ne doit pas reposer sur la simple confiance dans l'origine du navigateur.
+
+Les métadonnées techniques nécessaires à l'indexation locale peuvent être conservées sous une forme réduite. Toute recherche dans des champs sensibles doit être réalisée après déchiffrement local, ou utiliser un index local lui-même protégé.
+
+---
+
+## 9. Interface et expérience utilisateur
+
+L'application doit être claire, adaptée au bureau, à la tablette et au mobile.
+
+Écrans principaux :
+- tableau de bord ;
+- startups ;
+- pipeline ;
+- analyse d'une startup ;
+- valorisation ;
+- due diligence ;
+- portefeuille ;
+- rapports ;
+- centre de partage ;
+- coffre et paramètres de sécurité.
+
+Le tableau de bord ne doit être visible qu'après déverrouillage.
+
+Le centre de partage doit présenter séparément :
+- « Exporter un rapport chiffré » ;
+- « Partager directement avec un navigateur ».
+
+Afficher clairement :
+- quelles données seront partagées ;
+- si le destinataire pourra les télécharger ;
+- la durée de disponibilité de la session ;
+- les limites de révocation ;
+- les éventuelles métadonnées réseau ;
+- l'état de connexion ;
+- les avertissements en cas d'échec du chiffrement ou du partage.
+
+Aucun état ne doit indiquer « sécurisé » si les contrôles nécessaires n'ont pas été exécutés.
+
+---
+
+## 10. Exigences de sécurité non négociables
+
+### Interdictions
+
+- Pas de synchronisation cloud des données métier en clair.
+- Pas de base de données distante contenant les dossiers déchiffrés.
+- Pas de compte centralisé obligatoire.
+- Pas de fournisseur tiers possédant les clés de déchiffrement.
+- Pas de stockage des clés en clair dans IndexedDB ou localStorage.
+- Pas de données financières dans les logs, erreurs de télémétrie ou outils de suivi.
+- Pas d'envoi automatique de données métier à un service d'IA.
+- Pas de partage de coffre complet par défaut.
+- Pas d'exécution de scripts arbitraires issus de rapports ou de pièces jointes.
+- Pas de dépendance à un service distant pour déchiffrer les sauvegardes.
+- Pas de promesse de révocation de données déjà reçues par un tiers.
+
+### Mesures de protection
+
+- Content Security Policy restrictive.
+- Protection contre les scripts tiers non indispensables.
+- Dépendances minimales et auditables.
+- Vérification des dépendances et de la chaîne de compilation.
+- Absence de trackers publicitaires et d'analytics contenant des données utilisateur.
+- Gestion sûre des erreurs.
+- Protection des imports contre les archives malformées et les fichiers malveillants.
+- Validation des données importées et exportées.
+- Protection contre les injections HTML dans les noms, notes et rapports.
+- Tests cryptographiques et tests de non-régression.
+- Documentation des menaces et des limites de sécurité.
+
+L'utilisation de bibliothèques de chiffrement doit être justifiée et leurs versions verrouillées. Les secrets de production ne doivent pas être intégrés au code statique de la PWA.
+
+---
+
+## 11. Tests obligatoires
+
+### Tests fonctionnels
+
+- Création, modification et suppression de startups.
+- Gestion du pipeline.
+- Calculs financiers et scénarios.
+- Calculs de valorisation.
+- Gestion des documents.
+- Génération des rapports.
+- Sauvegarde et restauration.
+- Export chiffré.
+- Partage direct.
+- Consultation en lecture seule.
+
+### Tests de sécurité
+
+- Vérifier qu'aucune donnée métier en clair n'est persistée dans IndexedDB.
+- Vérifier qu'aucune donnée financière en clair n'apparaît dans localStorage, les URLs, les logs ou les messages d'erreur.
+- Vérifier qu'aucune requête réseau n'envoie le contenu du coffre.
+- Vérifier que le fournisseur de signalisation ne reçoit que les métadonnées techniques nécessaires.
+- Vérifier qu'un export chiffré ne révèle pas le contenu métier sans le secret.
+- Vérifier qu'une clé incorrecte ne permet pas le déchiffrement.
+- Vérifier la détection d'une archive modifiée.
+- Vérifier que le destinataire ne peut pas modifier le dossier source.
+- Vérifier que les champs non sélectionnés sont absents du rapport partagé.
+- Vérifier le verrouillage local et le comportement après rechargement.
+- Vérifier les scénarios de perte de connexion et d'échec WebRTC.
+- Vérifier qu'aucun code distant non nécessaire n'est exécuté dans le visualiseur.
+
+Les tests doivent utiliser des données fictives. Les tests automatisés ne doivent pas prétendre prouver l'absence absolue de fuite : les contrôles réseau, l'audit de code et les tests d'intrusion doivent compléter la suite automatisée.
+
+---
+
+## 12. Documentation obligatoire
+
+Le dépôt doit contenir :
+- `README.md` : objectif, installation, utilisation et architecture.
+- `SECURITY.md` : modèle de menace, limites et procédure de signalement.
+- `docs/ARCHITECTURE.md` : composants, frontières de confiance et flux de données.
+- `docs/ENCRYPTION.md` : clés, dérivation, chiffrement, rotation et récupération.
+- `docs/SHARING.md` : export chiffré, partage direct, signalisation et limites de révocation.
+- `docs/PRIVACY.md` : données stockées, données transmises et métadonnées visibles.
+- `docs/THREAT_MODEL.md` : scénarios d'attaque et mesures de protection.
+- `docs/DATA_MODEL.md` : entités et règles de stockage.
+- `docs/TESTING.md` : tests fonctionnels, cryptographiques et de sécurité.
+- `docs/DEPLOYMENT.md` : hébergement statique et protection de la chaîne de déploiement.
+
+La documentation doit distinguer les garanties techniques vérifiées, les hypothèses et les limites.
+
+---
+
+## 13. Plan d'implémentation
+
+### Phase 1 — Socle local sécurisé
+- Initialisation du projet PWA.
+- Modèle métier.
+- IndexedDB.
+- Chiffrement du coffre.
+- Déverrouillage local et prise en charge des passkeys compatibles.
+- Verrouillage et sauvegarde chiffrée.
+- Tests cryptographiques.
+
+### Phase 2 — Fonctions métier
+- CRM et pipeline.
+- Analyse et scoring.
+- Indicateurs financiers.
+- Valorisation.
+- Due diligence.
+- Portefeuille.
+- Rapports locaux.
+
+### Phase 3 — Export et partage
+- Sélection des champs à partager.
+- Export chiffré autonome.
+- Visualiseur en lecture seule.
+- Import et vérification d'intégrité.
+- Partage direct WebRTC.
+- Signalisation minimale si nécessaire.
+- Gestion des erreurs réseau et solution de repli.
+
+### Phase 4 — Durcissement
+- Audit des dépendances.
+- Tests réseau de non-divulgation.
+- Tests d'import/export hostiles.
+- Vérification des politiques de sécurité web.
+- Revue de l'architecture cryptographique.
+- Documentation et validation des critères d'acceptation.
+
+Les phases doivent être livrées progressivement. Une fonctionnalité non implémentée doit être signalée comme telle et ne doit jamais être présentée comme opérationnelle.
+
+---
+
+## 14. Critères d'acceptation finaux
+
+Le projet ne peut être considéré comme conforme que si :
+
+1. Les données métier sont chiffrées avant persistance locale.
+2. Aucun serveur ne stocke les dossiers métier déchiffrés.
+3. Aucun service tiers ne possède les clés de déchiffrement.
+4. Le déverrouillage local et la gestion des passkeys sont documentés et testés.
+5. L'utilisateur peut exporter et restaurer une sauvegarde chiffrée.
+6. Le partage par fichier fonctionne sans compte centralisé.
+7. Le partage direct transmet uniquement des données chiffrées sur le réseau.
+8. Les deux modes de partage sont en lecture seule et limités aux champs sélectionnés.
+9. Le fonctionnement sans connexion est assuré pour les données locales et l'export chiffré.
+10. Les limites du partage direct, de la révocation et de la récupération des clés sont clairement expliquées.
+11. Les tests de sécurité et de non-divulgation passent.
+12. L'hébergement et la chaîne de distribution du code sont documentés comme faisant partie du modèle de menace.
+13. Aucune fonctionnalité critique n'est déclarée terminée sans preuve par tests ou vérification.
+14. La documentation décrit honnêtement ce qui est garanti, ce qui est testé et ce qui reste une limite.
+
+**Décision d'architecture finale :** VentureFlow est une PWA local-first avec coffre métier chiffré, passkey et déverrouillage local, sans identité centralisée et sans synchronisation cloud. Le partage est limité à deux modes : export chiffré autonome et connexion directe entre navigateurs. Les services externes éventuels ne sont jamais autorisés à recevoir des données financières déchiffrées ou les clés permettant de les déchiffrer.

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090D16" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#bgGrad)" />
+  <rect x="56" y="56" width="400" height="400" rx="64" fill="#131C2E" stroke="#1E293B" stroke-width="4" />
+  <!-- VentureFlow Chevron and Lock Motif -->
+  <circle cx="256" cy="180" r="32" fill="url(#brandGrad)" />
+  <path d="M140 210 L256 370 L372 210" fill="none" stroke="url(#brandGrad)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M190 210 L256 300 L322 210" fill="none" stroke="#0E7490" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
+</svg>

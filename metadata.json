@@ -1,0 +1,6 @@
+{
+  "name": "VentureFlow",
+  "description": "Application PWA local-first d'analyse, d'évaluation financière et de suivi de startups avec coffre chiffré AES-256-GCM et passkeys.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
