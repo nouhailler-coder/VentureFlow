@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { ValuationEstimate, ValuationMethod } from '../../types';
+import { Tooltip } from '../common/Tooltip';
 
 export const ValuationView: React.FC = () => {
   const { startups, financials, valuations, saveValuation, deleteValuation } = useVault();
@@ -126,21 +127,21 @@ export const ValuationView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800/80">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white">Atelier de Valorisation Multi-Méthodes</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Atelier de Valorisation Multi-Méthodes</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             6 méthodes de valorisation standard (Multiples, DCF, Méthode VC, Dilution) sans télémétrie externe
           </p>
         </div>
 
         {/* Startup selector */}
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-400 whitespace-nowrap">Startup évaluée :</label>
+          <label className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Startup évaluée :</label>
           <select
             value={selectedStartupId}
             onChange={(e) => setSelectedStartupId(e.target.value)}
-            className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-semibold text-white focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+            className="px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-500 cursor-pointer shadow-xs"
           >
             {startups.map((s) => (
               <option key={s.id} value={s.id}>
@@ -152,14 +153,14 @@ export const ValuationView: React.FC = () => {
       </div>
 
       {saveFeedback && (
-        <div className="p-3 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-xs text-emerald-300 flex items-center gap-2">
-          <Check className="w-4 h-4 text-emerald-400" />
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2 shadow-xs">
+          <Check className="w-4 h-4 text-emerald-500" />
           <span>{saveFeedback}</span>
         </div>
       )}
 
       {/* Method navigation tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs border-b border-slate-800">
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs border-b border-slate-200 dark:border-slate-800">
         {[
           { id: 'multiples_revenue', label: '1. Multiples de Revenus / ARR' },
           { id: 'vc_method', label: '2. Méthode VC (First Chicago)' },
@@ -172,8 +173,8 @@ export const ValuationView: React.FC = () => {
             onClick={() => setActiveTab(tab.id as MethodTab)}
             className={`px-3 py-2 rounded-t-lg font-medium whitespace-nowrap cursor-pointer transition-colors border-b-2 ${
               activeTab === tab.id
-                ? 'border-emerald-500 text-white bg-slate-900/80'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+                ? 'border-emerald-500 text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-900/80 font-semibold'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900/40'
             }`}
           >
             {tab.label}

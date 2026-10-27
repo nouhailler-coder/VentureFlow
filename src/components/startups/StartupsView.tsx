@@ -65,10 +65,10 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Top action row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800/80">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white">Répertoire des Startups (CRM)</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Répertoire des Startups (CRM)</h1>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
             {filteredStartups.length} startup{filteredStartups.length > 1 ? 's' : ''} indexée{filteredStartups.length > 1 ? 's' : ''} sous chiffrement AES-256 local
           </p>
         </div>
@@ -85,13 +85,13 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
       {/* Filter bar */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Rechercher par nom, ville, technologie, description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
+            className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
           />
         </div>
 
@@ -99,7 +99,7 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
           <select
             value={selectedStage}
             onChange={(e) => setSelectedStage(e.target.value)}
-            className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+            className="px-3 py-2 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-700 dark:text-slate-300 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
           >
             <option value="all">Toutes les étapes (9)</option>
             {PIPELINE_STAGES.map((stg) => (
@@ -112,7 +112,7 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
           <select
             value={selectedSector}
             onChange={(e) => setSelectedSector(e.target.value)}
-            className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+            className="px-3 py-2 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-700 dark:text-slate-300 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
           >
             <option value="all">Tous les secteurs</option>
             {sectors.map((sec) => (
@@ -125,10 +125,10 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
       </div>
 
       {/* Startups Table / Data Grid */}
-      <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl overflow-hidden shadow-xs">
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800/80 rounded-xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/60 border-b border-slate-800 text-slate-400">
+            <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400">
               <tr>
                 <th className="py-3 px-4 font-medium">Société & Localisation</th>
                 <th className="py-3 px-3 font-medium">Secteur d'activité</th>
@@ -139,7 +139,7 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
                 <th className="py-3 px-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
               {filteredStartups.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-slate-500">
@@ -155,18 +155,18 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
                     <tr
                       key={st.id}
                       onClick={() => onOpenStartup(st.id)}
-                      className="hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer group"
                     >
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-white group-hover:text-emerald-300 transition-colors">
+                        <div className="font-semibold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition-colors">
                           {st.name}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                           {st.city}, {st.country} {st.foundedYear ? `· Créée en ${st.foundedYear}` : ''}
                         </div>
                       </td>
 
-                      <td className="py-3 px-3 text-slate-300">
+                      <td className="py-3 px-3 text-slate-700 dark:text-slate-300">
                         <div>{st.sector}</div>
                         {st.tags && st.tags.length > 0 && (
                           <div className="text-[10px] text-slate-500 mt-0.5">
@@ -176,17 +176,17 @@ export const StartupsView: React.FC<StartupsViewProps> = ({
                       </td>
 
                       <td className="py-3 px-3">
-                        <div className="text-slate-200 font-medium">{st.stage}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
+                        <div className="text-slate-800 dark:text-slate-200 font-medium">{st.stage}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                           {stageObj?.label || st.pipelineStage}
                         </div>
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-200">
+                      <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-800 dark:text-slate-200">
                         {formatEuro(st.targetAmount)}
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-400">
+                      <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
                         {formatEuro(st.valuationAsked)}
                       </td>
 

@@ -70,21 +70,21 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Top Header & View Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800/80">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white">Pipeline d'Investissement</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Pipeline d'Investissement</h1>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
             Suivi des dossiers à travers les 9 étapes du cahier des charges
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* View toggle */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 text-xs">
             <button
               onClick={() => setViewMode('kanban')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${
-                viewMode === 'kanban' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                viewMode === 'kanban' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
               }`}
             >
               <Kanban className="w-3.5 h-3.5" />
@@ -93,7 +93,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
             <button
               onClick={() => setViewMode('table')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${
-                viewMode === 'table' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                viewMode === 'table' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
               }`}
             >
               <TableIcon className="w-3.5 h-3.5" />
@@ -121,26 +121,26 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
             return (
               <div
                 key={stage.id}
-                className="w-72 shrink-0 bg-slate-900/70 border border-slate-800/80 rounded-xl flex flex-col max-h-[75vh]"
+                className="w-72 shrink-0 bg-slate-100/80 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/80 rounded-xl flex flex-col max-h-[75vh]"
               >
                 {/* Column header */}
-                <div className="p-3 border-b border-slate-800/80 bg-slate-950/40 rounded-t-xl">
+                <div className="p-3 border-b border-slate-200 dark:border-slate-800/80 bg-white/70 dark:bg-slate-950/40 rounded-t-xl">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-200 truncate">{stage.label}</span>
-                    <span className="text-[11px] font-mono tabular-nums text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{stage.label}</span>
+                    <span className="text-[11px] font-mono tabular-nums text-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                       {stageDeals.length}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between font-mono tabular-nums">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center justify-between font-mono tabular-nums">
                     <span>Volume :</span>
-                    <span className="text-slate-300 font-medium">{formatEuro(totalStageVolume)}</span>
+                    <span className="text-slate-800 dark:text-slate-300 font-medium">{formatEuro(totalStageVolume)}</span>
                   </div>
                 </div>
 
                 {/* Column Cards */}
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
                   {stageDeals.length === 0 ? (
-                    <div className="py-8 text-center text-[11px] text-slate-600 border border-dashed border-slate-800/60 rounded-lg">
+                    <div className="py-8 text-center text-[11px] text-slate-400 dark:text-slate-600 border border-dashed border-slate-300 dark:border-slate-800/60 rounded-lg">
                       Aucun dossier
                     </div>
                   ) : (
@@ -150,28 +150,28 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
                         <div
                           key={deal.id}
                           onClick={() => onOpenStartup(deal.id)}
-                          className="p-3 bg-slate-950/90 border border-slate-800 rounded-lg shadow-xs hover:border-slate-700 transition-colors cursor-pointer group"
+                          className="p-3 bg-white dark:bg-slate-950/90 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs hover:border-emerald-500 dark:hover:border-slate-700 transition-colors cursor-pointer group"
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="font-semibold text-xs text-white group-hover:text-emerald-300 transition-colors">
+                            <div className="font-semibold text-xs text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition-colors">
                               {deal.name}
                             </div>
-                            <span className="text-[10px] text-slate-400 font-mono">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                               {deal.stage}
                             </span>
                           </div>
 
-                          <div className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                             {deal.description}
                           </div>
 
-                          <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/60 text-[11px]">
-                            <span className="font-mono tabular-nums text-emerald-400 font-medium">
+                          <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
+                            <span className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
                               {formatEuro(deal.targetAmount)}
                             </span>
                             {an && (
-                              <span className="text-[10px] font-mono text-slate-400">
-                                Score: <strong className="text-white">{an.compositeScore.toFixed(0)}</strong>
+                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                Score: <strong className="text-slate-900 dark:text-white">{an.compositeScore.toFixed(0)}</strong>
                               </span>
                             )}
                           </div>
@@ -184,7 +184,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
                             <button
                               disabled={sIdx === 0}
                               onClick={() => handleStageMove(deal, PIPELINE_STAGES[sIdx - 1].id)}
-                              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 cursor-pointer"
                               title="Déplacer vers l'étape précédente"
                             >
                               <ChevronLeft className="w-3 h-3" />
@@ -193,7 +193,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
                             <select
                               value={deal.pipelineStage}
                               onChange={(e) => handleStageMove(deal, e.target.value as PipelineStageId)}
-                              className="text-[10px] bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-slate-300 cursor-pointer"
+                              className="text-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-1.5 py-0.5 text-slate-700 dark:text-slate-300 cursor-pointer"
                             >
                               {PIPELINE_STAGES.map((s) => (
                                 <option key={s.id} value={s.id}>
@@ -205,7 +205,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
                             <button
                               disabled={sIdx === PIPELINE_STAGES.length - 1}
                               onClick={() => handleStageMove(deal, PIPELINE_STAGES[sIdx + 1].id)}
-                              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 cursor-pointer"
                               title="Avancer à l'étape suivante"
                             >
                               <ChevronRight className="w-3 h-3" />
